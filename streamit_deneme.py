@@ -5,14 +5,85 @@ Created on Thu Jun 17 11:33:27 2021
 @author: enesb
 """
 
-from call_Center import forecast_function,exog_variable_creator
-from Class import TimeSeries
+# from call_Center import forecast_function,exog_variable_creator
+# from Class import TimeSeries
 import streamlit as st
 import pandas as pd
 import base64
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import holidays
+from statsmodels.tsa.statespace.sarimax import SARIMAXResults
+from datetime import date
+
+
+def exog_variable_creator(last_day):
+    """
+    Last Day "YYYY-MM-DD" formatında olmalı.
+
+    Bu fonksiyon ile Ayın günü, haftanın günü, haftaiçi flag, ayın 15i flag,
+    şubat ayı flag ve holiday flag değişkenleri oluşturulur.
+
+    Kullanılan paketler : pandas,datetime,holiday
+    """
+
+    tarihler = pd.DataFrame(pd.date_range(start="2021-01-01", end=last_day), columns=["Tarih"])
+    tarihler["AYIN_GUNU"] = tarihler.Tarih.dt.day
+    tarihler["HAFTANIN_GUNU"] = tarihler.Tarih.dt.weekday
+    tarihler["HAFTAICI_FLAG"] = np.where(tarihler.Tarih.dt.weekday.isin([5, 6]), 0, 1)
+    tarihler["AY_15_FLAG"] = np.where(tarihler.Tarih.dt.day == 15, 1, 0)
+
+    turkey_holidays = holidays.Turkey()
+    turkey_holidays
+
+    holiday_liste = []
+    for i in range(tarihler.shape[0]):
+        holiday_liste.append(
+            np.where(date(tarihler.Tarih[i].year, tarihler.Tarih[i].month, tarihler.Tarih[i].day) in turkey_holidays, 1,
+                     0))
+
+    tarihler["Holiday_Flag"] = holiday_liste
+    tarihler["Holiday_Flag"] = tarihler["Holiday_Flag"].astype("int64")
+    tarihler["SUBAT_FLAG"] = np.where(tarihler.Tarih.dt.month == 2, 1, 0)
+
+    tarihler.set_index("Tarih", inplace=True)
+    return tarihler
+
+
+
+def forecast_function(exog_data, baslangic_tarihi="2021-04-01"):
+    """
+    Tahminlemek istenilen zaman için yaratılan datayı exog_data parametresine girmek gerekiyor.
+    Baslangic tarihi için de ne zamandan itibaren tahminler yapılacaksa o tarih girilecek.
+    """
+    start_number = 1461
+    end_number = start_number + exog_data.shape[0] - 1
+
+    loaded_model = SARIMAXResults.load("Cagri_Tahminleme_Model.pkl")
+
+    predictions = loaded_model.predict(start=start_number, end=end_number, exog=exog_data)
+
+    predictions = predictions.loc[baslangic_tarihi:]
+
+    #plt.figure(figsize=(12, 8))
+    #plt.xlabel("Time Period", fontsize=12)
+    #plt.ylabel("Predictions", fontsize=12)
+    #    plt.title("Number of Calls Expected from " + str(baslangic_tarihi) + " to " + str(exog_data.index.max()))
+#    predictions.plot()
+
+    return predictions
+
+
+class TimeSeries:
+    def __init__(self,baslangic,bitis):
+        self.baslangic = baslangic
+        self.bitis = bitis
+
+    def predict(self):
+        return forecast_function(exog_data=exog_variable_creator(self.bitis),baslangic_tarihi=self.baslangic)
+
+
 
 st.title('Çağrı Merkezi Tahminleme Modeli')
 
